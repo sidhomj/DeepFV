@@ -261,7 +261,7 @@ class FisherVectorDL(tf.keras.Model):
         return -tf.reduce_mean(log_likelihood)
 
     def fit_minibatch(self, X, epochs=100, batch_size=1024*6, learning_rate=0.001,
-                      verbose=True, model_dump_path=None, steps_per_epoch=None):
+                      verbose=True, model_dump_path=None, steps_per_epoch=None, print_every=10):
         """
         Fit GMM using mini-batch gradient descent.
 
@@ -274,6 +274,7 @@ class FisherVectorDL(tf.keras.Model):
             model_dump_path: Path to save fitted model
             steps_per_epoch: Number of batches to process per epoch (default: None = full dataset).
                            Useful for massive datasets to avoid cycling through entire dataset per epoch.
+            print_every: Print loss every N epochs (default: 10). Always prints first and last epoch.
 
         Returns:
             self
@@ -332,7 +333,7 @@ class FisherVectorDL(tf.keras.Model):
                 if steps_per_epoch is not None and step_count >= steps_per_epoch:
                     break
 
-            if verbose and (epoch % 10 == 0 or epoch == epochs - 1):
+            if verbose and (epoch % print_every == 0 or epoch == epochs - 1):
                 avg_loss = np.mean(epoch_loss)
                 print(f'Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}')
 
@@ -487,7 +488,7 @@ class FisherVectorDL(tf.keras.Model):
 
         return self
 
-    def predict_fisher_vector(self, X, normalized=True):
+    def predict_fisher_vector(self, X, normalized=True, batch_size=None, verbose=False):
         """
         Compute Fisher Vectors for input data.
 
@@ -497,12 +498,20 @@ class FisherVectorDL(tf.keras.Model):
                - 3D: (n_samples, n_descriptors, feature_dim)
                - 4D: (n_samples, n_features_per_sample, n_descriptors, feature_dim)
             normalized: Apply improved Fisher Vector normalization
+            batch_size: Process data in batches to avoid memory issues (default: None = process all at once).
+                       For large datasets (millions of samples), set to e.g. 1000-10000.
+            verbose: Print progress when processing in batches
 
         Returns:
             Fisher vectors with shape:
             - (n_samples, 2*n_kernels, feature_dim) for 2D or 3D input
             - (n_samples, n_features_per_sample, 2*n_kernels, feature_dim) for 4D input
         """
+        # If batch_size specified, process in batches
+        if batch_size is not None:
+            return self._predict_batched(X, normalized=normalized, batch_size=batch_size, verbose=verbose)
+
+        # Otherwise use original single-pass method
         if X.ndim == 4:
             return self._predict(X, normalized=normalized)
         elif X.ndim == 3:
@@ -519,6 +528,70 @@ class FisherVectorDL(tf.keras.Model):
             return np.reshape(result, (orig_shape[0], 2 * self.n_kernels, orig_shape[-1]))
         else:
             raise AssertionError("X must be an ndarray with 2, 3, or 4 dimensions")
+
+    def _predict_batched(self, X, normalized=True, batch_size=1000, verbose=False):
+        """
+        Compute Fisher Vectors in batches to avoid memory issues.
+
+        Args:
+            X: Input features with 2, 3, or 4 dimensions
+            normalized: Apply improved Fisher Vector normalization
+            batch_size: Number of samples to process per batch
+            verbose: Print progress
+
+        Returns:
+            Fisher vectors
+        """
+        orig_ndim = X.ndim
+        orig_shape = X.shape
+
+        # Determine output shape based on input dimensions
+        if orig_ndim == 2:
+            n_samples = orig_shape[0]
+            output_shape = (n_samples, 2 * self.n_kernels, orig_shape[-1])
+        elif orig_ndim == 3:
+            n_samples = orig_shape[0]
+            output_shape = (n_samples, 2 * self.n_kernels, orig_shape[-1])
+        elif orig_ndim == 4:
+            n_samples = orig_shape[0]
+            output_shape = (n_samples, orig_shape[1], 2 * self.n_kernels, orig_shape[-1])
+        else:
+            raise AssertionError("X must be an ndarray with 2, 3, or 4 dimensions")
+
+        # Pre-allocate output array
+        fisher_vectors_all = np.zeros(output_shape, dtype=np.float32)
+
+        # Process in batches
+        n_batches = int(np.ceil(n_samples / batch_size))
+
+        if verbose:
+            print(f"Processing {n_samples} samples in {n_batches} batches of size {batch_size}...")
+
+        for i in range(n_batches):
+            start_idx = i * batch_size
+            end_idx = min((i + 1) * batch_size, n_samples)
+
+            # Extract batch
+            if orig_ndim == 2:
+                X_batch = X[start_idx:end_idx]
+            elif orig_ndim == 3:
+                X_batch = X[start_idx:end_idx]
+            else:  # 4D
+                X_batch = X[start_idx:end_idx]
+
+            # Process batch (recursively call predict_fisher_vector without batch_size)
+            fv_batch = self.predict_fisher_vector(X_batch, normalized=normalized, batch_size=None)
+
+            # Store results
+            fisher_vectors_all[start_idx:end_idx] = fv_batch
+
+            if verbose and (i + 1) % max(1, n_batches // 10) == 0:
+                print(f"  Processed {end_idx}/{n_samples} samples ({(end_idx/n_samples)*100:.1f}%)")
+
+        if verbose:
+            print(f"✓ Completed processing {n_samples} samples")
+
+        return fisher_vectors_all
 
     def _predict(self, X, normalized=True):
         """
