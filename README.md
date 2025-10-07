@@ -79,6 +79,8 @@ print(f"Selected {fv_dl.n_kernels} components")
 ```
 
 ### 4. Compute Fisher Vectors
+
+For data with multiple descriptors per sample (3D):
 ```python
 # Compute normalized Fisher Vectors
 sample_data_test = sample_data[:20]
@@ -86,6 +88,16 @@ fisher_vectors = fv_dl.predict_fisher_vector(sample_data_test, normalized=True)
 
 # Output shape: (n_samples, 2*n_kernels, feature_dim)
 print(f"Fisher vector shape: {fisher_vectors.shape}")
+```
+
+For simple 2D data (each sample is a single feature vector):
+```python
+# 2D input: (n_samples, feature_dim)
+simple_data = np.random.randn(100, 32)
+fisher_vectors_2d = fv_dl.predict_fisher_vector(simple_data, normalized=True)
+
+# Output shape: (n_samples, 2*n_kernels, feature_dim)
+print(f"Fisher vector shape: {fisher_vectors_2d.shape}")
 ```
 
 ### 5. Save and load models
