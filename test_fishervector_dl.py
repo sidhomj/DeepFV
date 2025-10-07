@@ -84,28 +84,17 @@ print(f"\n✓ Learned mixture weights: {learned_pi}")
 print(f"✓ Learned means:\n{learned_means}")
 print(f"✓ Learned covariance matrices (showing first component):\n{learned_covs[0]}")
 
-# Visualize learned clusters with ellipses
+# Visualize learned clusters
 plt.subplot(1, 3, 2)
 for i in range(n_mixtures):
     mask = labels == i
     plt.scatter(X[mask, 0], X[mask, 1], c=colors[i], alpha=0.3, s=10)
 
-# Plot learned means and covariance ellipses
-from matplotlib.patches import Ellipse
-
+# Plot learned means
 for i in range(n_mixtures):
-    # Plot mean
     plt.scatter(learned_means[i, 0], learned_means[i, 1],
                marker='x', s=200, c='black', linewidths=3,
                label=f'Learned μ{i+1}')
-
-    # Plot covariance ellipse (2 standard deviations)
-    eigenvalues, eigenvectors = np.linalg.eigh(learned_covs[i])
-    angle = np.degrees(np.arctan2(eigenvectors[1, 1], eigenvectors[0, 1]))
-    width, height = 2 * 2 * np.sqrt(eigenvalues)  # 2 std devs
-    ellipse = Ellipse(learned_means[i], width, height, angle=angle,
-                     facecolor='none', edgecolor='black', linewidth=2, linestyle='--')
-    plt.gca().add_patch(ellipse)
 
 plt.title(f'Learned GMM (Full Cov, {n_mixtures} kernels)')
 plt.xlabel('Feature 1')
@@ -136,27 +125,14 @@ for i in range(n_mixtures):
     mask = labels == i
     plt.scatter(X[mask, 0], X[mask, 1], c=colors[i], alpha=0.3, s=10)
 
-# Plot BIC-selected means and ellipses
+# Plot BIC-selected means
 bic_means = fv_dl_bic.mu_layer.numpy().T
 bic_pi = tf.nn.softmax(fv_dl_bic.pi_layer).numpy()
 
-# Get BIC covariances
-L_bic = fv_dl_bic.cov_layer.numpy()
-bic_covs = np.array([L_bic[k] @ L_bic[k].T for k in range(fv_dl_bic.n_kernels)])
-
 for i in range(fv_dl_bic.n_kernels):
-    # Plot mean
     plt.scatter(bic_means[i, 0], bic_means[i, 1],
                marker='*', s=300, c='orange', edgecolors='black', linewidths=2,
                label=f'BIC μ{i+1} (π={bic_pi[i]:.2f})')
-
-    # Plot covariance ellipse
-    eigenvalues, eigenvectors = np.linalg.eigh(bic_covs[i])
-    angle = np.degrees(np.arctan2(eigenvectors[1, 1], eigenvectors[0, 1]))
-    width, height = 2 * 2 * np.sqrt(eigenvalues)
-    ellipse = Ellipse(bic_means[i], width, height, angle=angle,
-                     facecolor='none', edgecolor='orange', linewidth=2, linestyle='-.')
-    plt.gca().add_patch(ellipse)
 
 plt.title(f'BIC Selection (Full Cov, {fv_dl_bic.n_kernels} kernels)')
 plt.xlabel('Feature 1')
@@ -169,6 +145,62 @@ plt.savefig('fishervector_dl_test.png', dpi=150)
 print(f"\n✓ Visualization saved to 'fishervector_dl_test.png'")
 plt.show()
 
+
+# Test 3: Compute and visualize Fisher Vectors
 print("\n" + "=" * 60)
-print("Test completed successfully! ✓")
+print("[Test 3] Computing and visualizing Fisher Vectors")
+print("=" * 60)
+
+# Reshape data to 3D for Fisher Vector computation (n_images, n_features_per_image, feature_dim)
+# Let's treat each sample as an "image" with 1 "feature"
+X_for_fv = X[:100].reshape(100, 1, feature_dim)  # Take 100 samples
+
+# Compute Fisher Vectors
+print(f"\nComputing Fisher Vectors for {X_for_fv.shape[0]} samples...")
+fisher_vectors = fv_dl.predict_fisher_vector(X_for_fv, normalized=True)
+print(f"✓ Fisher vector shape: {fisher_vectors.shape}")
+print(f"  Expected: ({X_for_fv.shape[0]}, {2 * n_mixtures}, {feature_dim})")
+
+# Flatten Fisher vectors for visualization
+fv_flattened = fisher_vectors.reshape(fisher_vectors.shape[0], -1)  # (n_samples, 2*n_kernels*feature_dim)
+print(f"✓ Flattened Fisher vector shape: {fv_flattened.shape}")
+
+# Visualize Fisher Vectors using t-SNE or PCA
+from sklearn.decomposition import PCA
+
+print("\nReducing Fisher Vector dimensionality with PCA for visualization...")
+pca = PCA(n_components=2)
+fv_2d = pca.fit_transform(fv_flattened)
+print(f"✓ PCA explained variance: {pca.explained_variance_ratio_.sum():.2%}")
+
+# Plot Fisher Vectors in 2D space
+plt.figure(figsize=(10, 5))
+
+plt.subplot(1, 2, 1)
+# Color by true labels
+for i in range(n_mixtures):
+    mask = labels[:100] == i
+    plt.scatter(fv_2d[mask, 0], fv_2d[mask, 1], c=colors[i], alpha=0.6, s=30, label=f'Cluster {i+1}')
+plt.title('Fisher Vectors (colored by true cluster)')
+plt.xlabel('PCA Component 1')
+plt.ylabel('PCA Component 2')
+plt.legend()
+plt.grid(True, alpha=0.3)
+
+plt.subplot(1, 2, 2)
+# Color by original features
+plt.scatter(fv_2d[:, 0], fv_2d[:, 1], c=X[:100, 0], cmap='viridis', alpha=0.6, s=30)
+plt.colorbar(label='Original Feature 1 Value')
+plt.title('Fisher Vectors (colored by feature value)')
+plt.xlabel('PCA Component 1')
+plt.ylabel('PCA Component 2')
+plt.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('fishervector_visualization.png', dpi=150)
+print(f"\n✓ Fisher Vector visualization saved to 'fishervector_visualization.png'")
+plt.show()
+
+print("\n" + "=" * 60)
+print("All tests completed successfully! ✓")
 print("=" * 60)
