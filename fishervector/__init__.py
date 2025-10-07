@@ -1,1 +1,2 @@
 from fishervector.FisherVector import FisherVectorGMM
+from fishervector.FisherVectorDL import FisherVectorDL
