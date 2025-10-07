@@ -166,15 +166,12 @@ labels_sampled = labels[sample_indices]
 print(f"Sampled {len(sample_indices)} points ({n_samples_per_cluster} per cluster)")
 print(f"  Cluster distribution: {[np.sum(labels_sampled == i) for i in range(n_mixtures)]}")
 
-# Reshape data to 3D for Fisher Vector computation (n_images, n_features_per_image, feature_dim)
-# Let's treat each sample as an "image" with 1 "feature"
-X_for_fv = X_sampled.reshape(len(sample_indices), 1, feature_dim)
-
-# Compute Fisher Vectors
-print(f"\nComputing Fisher Vectors for {X_for_fv.shape[0]} samples...")
-fisher_vectors = fv_dl.predict_fisher_vector(X_for_fv, normalized=True)
+# Compute Fisher Vectors directly from 2D data
+# The method now handles 2D input automatically (treats each sample as having a single descriptor)
+print(f"\nComputing Fisher Vectors for {X_sampled.shape[0]} samples...")
+fisher_vectors = fv_dl.predict_fisher_vector(X_sampled, normalized=True)
 print(f"✓ Fisher vector shape: {fisher_vectors.shape}")
-print(f"  Expected: ({X_for_fv.shape[0]}, {2 * n_mixtures}, {feature_dim})")
+print(f"  Expected: ({X_sampled.shape[0]}, {2 * n_mixtures}, {feature_dim})")
 
 # Flatten Fisher vectors for visualization
 fv_flattened = fisher_vectors.reshape(fisher_vectors.shape[0], -1)  # (n_samples, 2*n_kernels*feature_dim)
