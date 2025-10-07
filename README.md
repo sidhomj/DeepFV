@@ -34,9 +34,9 @@ pip install -e .
 ```python
 import numpy as np
 
-# Example: SIFT image features
-shape = [300, 20, 32]  # (n_images, n_features_per_image, feature_dim)
-image_data = np.concatenate([
+# Example: SIFT descriptors from images
+shape = [300, 20, 32]  # (n_samples, n_descriptors_per_sample, feature_dim)
+sample_data = np.concatenate([
     np.random.normal(-np.ones(30), size=shape),
     np.random.normal(np.ones(30), size=shape)
 ], axis=0)
@@ -55,7 +55,7 @@ fv_dl = FisherVectorDL(
 
 # Fit with mini-batch training
 fv_dl.fit_minibatch(
-    image_data,
+    sample_data,
     epochs=100,
     batch_size=1024*6,
     learning_rate=0.001,
@@ -68,7 +68,7 @@ fv_dl.fit_minibatch(
 # Automatically select optimal number of components
 fv_dl = FisherVectorDL(feature_dim=32, covariance_type='full')
 fv_dl.fit_by_bic(
-    image_data,
+    sample_data,
     choices_n_kernels=[2, 5, 10, 20],
     epochs=80,
     batch_size=1024,
@@ -81,10 +81,10 @@ print(f"Selected {fv_dl.n_kernels} components")
 ### 4. Compute Fisher Vectors
 ```python
 # Compute normalized Fisher Vectors
-image_data_test = image_data[:20]
-fisher_vectors = fv_dl.predict_fisher_vector(image_data_test, normalized=True)
+sample_data_test = sample_data[:20]
+fisher_vectors = fv_dl.predict_fisher_vector(sample_data_test, normalized=True)
 
-# Output shape: (n_images, 2*n_kernels, feature_dim)
+# Output shape: (n_samples, 2*n_kernels, feature_dim)
 print(f"Fisher vector shape: {fisher_vectors.shape}")
 ```
 

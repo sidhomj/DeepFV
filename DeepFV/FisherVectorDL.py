@@ -484,10 +484,13 @@ class FisherVectorDL(tf.keras.Model):
 
         Args:
             X: Input features with 3 or 4 dimensions
+               - 3D: (n_samples, n_descriptors, feature_dim)
+               - 4D: (n_samples, n_features_per_sample, n_descriptors, feature_dim)
             normalized: Apply improved Fisher Vector normalization
 
         Returns:
-            Fisher vectors
+            Fisher vectors with shape (n_samples, 2*n_kernels, feature_dim) for 3D input
+            or (n_samples, n_features_per_sample, 2*n_kernels, feature_dim) for 4D input
         """
         if X.ndim == 4:
             return self._predict(X, normalized=normalized)
@@ -504,21 +507,21 @@ class FisherVectorDL(tf.keras.Model):
         Internal method to compute Fisher Vectors.
 
         Args:
-            X: Input features (n_videos, n_frames, n_features, feature_dim)
+            X: Input features (n_samples, n_features_per_sample, n_descriptors, feature_dim)
             normalized: Apply improved Fisher Vector normalization
 
         Returns:
-            Fisher vectors (n_videos, n_frames, 2*n_kernels, feature_dim)
+            Fisher vectors (n_samples, n_features_per_sample, 2*n_kernels, feature_dim)
         """
         assert self.fitted, "Model must be fitted first"
         assert X.ndim == 4
         assert X.shape[-1] == self.feature_dim
 
-        n_videos, n_frames = X.shape[0], X.shape[1]
+        n_samples, n_features_per_sample = X.shape[0], X.shape[1]
 
         # Reshape for processing
-        X = X.reshape((-1, X.shape[-2], X.shape[-1]))  # (n_images, n_features, feature_dim)
-        X_matrix = X.reshape(-1, X.shape[-1])  # (n_images * n_features, feature_dim)
+        X = X.reshape((-1, X.shape[-2], X.shape[-1]))  # (n_samples * n_features_per_sample, n_descriptors, feature_dim)
+        X_matrix = X.reshape(-1, X.shape[-1])  # (total_descriptors, feature_dim)
 
         # Get GMM parameters
         pi = tf.nn.softmax(self.pi_layer).numpy()
@@ -559,7 +562,7 @@ class FisherVectorDL(tf.keras.Model):
             mean_dev = np.multiply(
                 likelihood_ratio[:, :, :, None],
                 norm_dev_from_modes
-            ).mean(axis=1)  # (n_images, n_kernels, feature_dim)
+            ).mean(axis=1)  # (n_groups, n_kernels, feature_dim)
             mean_dev = np.multiply(1 / np.sqrt(pi[None, :, None]), mean_dev)
 
             # Covariance deviation
@@ -600,15 +603,15 @@ class FisherVectorDL(tf.keras.Model):
 
             for k in range(self.n_kernels):
                 # Mean gradient
-                centered = X - mu[:, k]  # (n_images, n_features, feature_dim)
-                weighted_centered = likelihood_ratio[:, :, k:k+1] * (centered @ cov_inv[k])  # (n_images, n_features, feature_dim)
-                mean_dev[:, k, :] = weighted_centered.mean(axis=1)  # (n_images, feature_dim)
+                centered = X - mu[:, k]  # (n_groups, n_descriptors, feature_dim)
+                weighted_centered = likelihood_ratio[:, :, k:k+1] * (centered @ cov_inv[k])  # (n_groups, n_descriptors, feature_dim)
+                mean_dev[:, k, :] = weighted_centered.mean(axis=1)  # (n_groups, feature_dim)
                 mean_dev[:, k, :] *= 1 / np.sqrt(pi[k])
 
                 # Covariance gradient (diagonal elements only for compatibility)
                 # For full covariance, we compute the gradient w.r.t. diagonal of precision matrix
-                quad_form = np.einsum('...i,ij,...j->...', centered, cov_inv[k], centered)  # (n_images, n_features)
-                cov_grad = likelihood_ratio[:, :, k] * (quad_form - self.feature_dim)  # (n_images, n_features)
+                quad_form = np.einsum('...i,ij,...j->...', centered, cov_inv[k], centered)  # (n_groups, n_descriptors)
+                cov_grad = likelihood_ratio[:, :, k] * (quad_form - self.feature_dim)  # (n_groups, n_descriptors)
 
                 # Average over features and use diagonal variance as approximation
                 diag_var = np.diag(cov_matrices[k])
@@ -618,9 +621,9 @@ class FisherVectorDL(tf.keras.Model):
         # Concatenate mean and covariance deviations
         fisher_vectors = np.concatenate([mean_dev, cov_dev], axis=1)
 
-        # Reshape to separate videos and frames
+        # Reshape to separate samples and features
         fisher_vectors = fisher_vectors.reshape(
-            (n_videos, n_frames, fisher_vectors.shape[1], fisher_vectors.shape[2])
+            (n_samples, n_features_per_sample, fisher_vectors.shape[1], fisher_vectors.shape[2])
         )
 
         # Apply normalization if requested
