@@ -262,7 +262,7 @@ class FisherVectorDL(tf.keras.Model):
 
     def fit_minibatch(self, X, epochs=100, batch_size=1024*6, learning_rate=0.001,
                       verbose=True, model_dump_path=None, steps_per_epoch=None, print_every=1,
-                      validation_split=0.0, patience=None, min_delta=0.001):
+                      validation_split=0.0, patience=None, min_delta=0.001, epochs_min=0):
         """
         Fit GMM using mini-batch gradient descent.
 
@@ -282,6 +282,8 @@ class FisherVectorDL(tf.keras.Model):
                      If validation_split > 0: monitors validation loss.
                      If validation_split = 0: monitors training loss.
             min_delta: Minimum change in loss to qualify as improvement (default: 0.001).
+            epochs_min: Minimum number of epochs before early stopping can trigger (default: 0).
+                       Useful to let model train for a while before checking patience.
 
         Returns:
             self
@@ -397,7 +399,7 @@ class FisherVectorDL(tf.keras.Model):
                     print(f'Epoch {epoch+1}/{epochs}, Train Loss: {avg_train_loss:.4f}')
 
             # Early stopping check (works for both validation and training loss)
-            if patience is not None:
+            if patience is not None and epoch >= epochs_min:
                 if monitored_loss < best_loss - min_delta:
                     best_loss = monitored_loss
                     epochs_no_improve = 0
@@ -410,6 +412,11 @@ class FisherVectorDL(tf.keras.Model):
                         loss_type = 'Val Loss' if X_val is not None else 'Train Loss'
                         print(f'Early stopping triggered after {epoch+1} epochs (patience={patience}, {loss_type} plateaued)')
                     break
+            elif patience is not None and epoch < epochs_min:
+                # Before epochs_min, still track best loss but don't count patience
+                if monitored_loss < best_loss - min_delta:
+                    best_loss = monitored_loss
+                    epochs_no_improve = 0
 
         self.fitted = True
 
