@@ -7,9 +7,11 @@ A TensorFlow-based implementation of Improved Fisher Vectors as described in [1]
 
 - **Full & Diagonal Covariance Support**: Model complex elliptical clusters with full covariance matrices, or use diagonal covariance for faster training
 - **Mini-batch Training**: Scalable to large datasets with mini-batch gradient descent
+- **Variable-length Bags**: Native support for Multiple Instance Learning with variable instances per bag
 - **BIC-based Model Selection**: Automatically determine optimal number of GMM components
 - **GPU Acceleration**: Built on TensorFlow 2.x for fast training on GPUs
 - **MiniBatchKMeans Initialization**: Smart initialization using scikit-learn's MiniBatchKMeans
+- **Memory-efficient Batch Processing**: Handle millions of samples with configurable batch sizes
 - **Save/Load Models**: Persist trained models for reuse
 - **Normalized Fisher Vectors**: Implements improved Fisher Vector normalization
 
@@ -100,7 +102,52 @@ fisher_vectors_2d = fv_dl.predict_fisher_vector(simple_data, normalized=True)
 print(f"Fisher vector shape: {fisher_vectors_2d.shape}")
 ```
 
-### 5. Save and load models
+### 5. Variable-length bags (Multiple Instance Learning)
+
+For datasets where each bag contains a variable number of instances:
+
+```python
+# Example: 3 images with different numbers of SIFT descriptors
+X = np.random.randn(245, 128)  # 245 total descriptors, 128-dim features
+
+# bag_ids maps each instance to its bag
+# Image 0 has 50 descriptors, Image 1 has 120, Image 2 has 75
+bag_ids = np.array([0]*50 + [1]*120 + [2]*75)
+
+# Train on all instances (ignoring bag structure)
+fv_dl = FisherVectorDL(n_kernels=10, feature_dim=128)
+fv_dl.fit_minibatch(X, epochs=100, verbose=True)
+
+# Compute Fisher Vectors per bag
+fisher_vectors, unique_bag_ids = fv_dl.predict_fisher_vector_bags(
+    X,
+    bag_ids,
+    normalized=True,
+    verbose=True
+)
+
+print(f"Fisher vectors shape: {fisher_vectors.shape}")  # (3, 20, 128)
+print(f"Bag IDs: {unique_bag_ids}")  # [0, 1, 2]
+```
+
+**Use cases for bag-level Fisher Vectors:**
+- **Image retrieval**: Variable number of SIFT/SURF descriptors per image
+- **Document classification**: Variable number of word embeddings per document
+- **Multiple Instance Learning (MIL)**: Variable instances per bag in medical imaging, etc.
+- **Time series**: Variable-length sequences aggregated into fixed representations
+
+**Memory-efficient processing for large datasets:**
+```python
+# Process millions of instances efficiently with batching
+fisher_vectors, unique_bag_ids = fv_dl.predict_fisher_vector_bags(
+    X_large,           # Millions of instances
+    bag_ids_large,     # Corresponding bag IDs
+    batch_size=1000,   # Process 1000 bags at a time
+    verbose=True       # Show progress
+)
+```
+
+### 6. Save and load models
 ```python
 # Save trained model
 fv_dl.save_model('my_model.pkl')
