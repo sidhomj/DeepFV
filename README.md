@@ -2,24 +2,17 @@
 
 # DeepFV - Fisher Vectors with Deep Learning
 
-This package implements Improved Fisher Vectors as described in [1], with both traditional scikit-learn and modern TensorFlow implementations. For a more concise description of Fisher Vectors see [2].
+A TensorFlow-based implementation of Improved Fisher Vectors as described in [1]. This package provides a modern, scalable approach to computing Fisher Vectors using deep learning techniques. For a concise description of Fisher Vectors see [2].
 
 ## Features
 
-### Classic Implementation (FisherVectorGMM)
-- Fitting a Gaussian Mixture Model (GMM) using scikit-learn
-- Determining the number of GMM components via BIC
-- Saving and loading the fitted GMM
-- Computing the (Improved) Fisher Vectors based on the fitted GMM
-- Supports diagonal covariance
-
-### Deep Learning Implementation (FisherVectorDL) - **NEW!**
-- TensorFlow/Keras-based GMM with mini-batch gradient descent training
-- **Supports both diagonal and full covariance matrices**
-- Scalable to large datasets with mini-batch training
-- BIC-based model selection
-- Fisher Vector computation compatible with the classic implementation
-- GPU acceleration support via TensorFlow
+- **Full & Diagonal Covariance Support**: Model complex elliptical clusters with full covariance matrices, or use diagonal covariance for faster training
+- **Mini-batch Training**: Scalable to large datasets with mini-batch gradient descent
+- **BIC-based Model Selection**: Automatically determine optimal number of GMM components
+- **GPU Acceleration**: Built on TensorFlow 2.x for fast training on GPUs
+- **MiniBatchKMeans Initialization**: Smart initialization using scikit-learn's MiniBatchKMeans
+- **Save/Load Models**: Persist trained models for reuse
+- **Normalized Fisher Vectors**: Implements improved Fisher Vector normalization
 
 ## Installation
 
@@ -35,38 +28,19 @@ pip install numpy scipy scikit-learn tensorflow matplotlib
 
 ## Quick Start
 
-### Classic Implementation (FisherVectorGMM)
-
-##### 1. Prepare your data
+### 1. Prepare your data
 ```python
 import numpy as np
-shape = [300, 20, 32]  # e.g. SIFT image features
+
+# Example: SIFT image features
+shape = [300, 20, 32]  # (n_images, n_features_per_image, feature_dim)
 image_data = np.concatenate([
     np.random.normal(-np.ones(30), size=shape),
     np.random.normal(np.ones(30), size=shape)
 ], axis=0)
 ```
 
-##### 2. Train the GMM
-```python
-from fishervector import FisherVectorGMM
-
-# Fixed number of components
-fv_gmm = FisherVectorGMM(n_kernels=10).fit(image_data)
-
-# Or use BIC to select optimal number of components
-fv_gmm = FisherVectorGMM().fit_by_bic(image_data, choices_n_kernels=[2,5,10,20])
-```
-
-##### 3. Compute Fisher Vectors
-```python
-image_data_test = image_data[:20]
-fv = fv_gmm.predict(image_data_test)
-```
-
-### Deep Learning Implementation (FisherVectorDL)
-
-##### 1. Train with mini-batch gradient descent
+### 2. Train with mini-batch gradient descent
 ```python
 from fishervector import FisherVectorDL
 
@@ -74,7 +48,7 @@ from fishervector import FisherVectorDL
 fv_dl = FisherVectorDL(
     n_kernels=10,
     feature_dim=32,
-    covariance_type='full'  # or 'diag'
+    covariance_type='full'  # or 'diag' for diagonal covariance
 )
 
 # Fit with mini-batch training
@@ -82,42 +56,56 @@ fv_dl.fit_minibatch(
     image_data,
     epochs=100,
     batch_size=1024*6,
-    learning_rate=0.001
+    learning_rate=0.001,
+    verbose=True
 )
 ```
 
-##### 2. BIC-based model selection
+### 3. BIC-based model selection
 ```python
-fv_dl = FisherVectorDL(covariance_type='full')
+# Automatically select optimal number of components
+fv_dl = FisherVectorDL(feature_dim=32, covariance_type='full')
 fv_dl.fit_by_bic(
     image_data,
     choices_n_kernels=[2, 5, 10, 20],
     epochs=80,
-    batch_size=1024
+    batch_size=1024,
+    verbose=True
 )
+
+print(f"Selected {fv_dl.n_kernels} components")
 ```
 
-##### 3. Compute Fisher Vectors
+### 4. Compute Fisher Vectors
 ```python
+# Compute normalized Fisher Vectors
+image_data_test = image_data[:20]
 fisher_vectors = fv_dl.predict_fisher_vector(image_data_test, normalized=True)
+
+# Output shape: (n_images, 2*n_kernels, feature_dim)
+print(f"Fisher vector shape: {fisher_vectors.shape}")
 ```
 
-##### 4. Save and load models
+### 5. Save and load models
 ```python
-# Save
+# Save trained model
 fv_dl.save_model('my_model.pkl')
 
-# Load
+# Load model later
+from fishervector import FisherVectorDL
 fv_dl_loaded = FisherVectorDL.load_model('my_model.pkl')
 ```
 
-## Key Advantages of FisherVectorDL
+## Why FisherVectorDL?
 
-1. **Full Covariance Support**: Can model rotated/tilted elliptical clusters, not just axis-aligned ones
-2. **Scalability**: Mini-batch training handles datasets too large for memory
+### Advantages over traditional GMM implementations:
+
+1. **Full Covariance Support**: Model rotated/tilted elliptical clusters, not just axis-aligned ones
+2. **Scalability**: Mini-batch training handles datasets too large to fit in memory
 3. **Speed**: GPU acceleration via TensorFlow for faster training
-4. **Flexibility**: Customizable learning rate, batch size, and epochs
+4. **Flexibility**: Customizable learning rate, batch size, and number of epochs
 5. **Modern Stack**: Built on TensorFlow 2.x with eager execution
+6. **Smart Initialization**: Uses MiniBatchKMeans for better starting parameters
 
 ## Testing
 
@@ -133,10 +121,19 @@ This will:
 - Compute and visualize Fisher Vectors
 - Save visualizations as PNG files
 
-Contributors:
-* Jonas Rothfuss (https://github.com/jonasrothfuss/)
-* Fabio Ferreira (https://github.com/ferreirafabio/)
+## Contributors
 
-References:
-- [1] https://www.robots.ox.ac.uk/~vgg/rg/papers/peronnin_etal_ECCV10.pdf
-- [2] http://www.vlfeat.org/api/fisher-fundamentals.html
+* **John-William Sidhom** (https://github.com/sidhomj/) - Main contributor, TensorFlow implementation with full covariance support
+
+### Original Contributors:
+* Jonas Rothfuss (https://github.com/jonasrothfuss/) - Original implementation
+* Fabio Ferreira (https://github.com/ferreirafabio/) - Original implementation
+
+## References
+
+- [1] Perronnin, F., Sánchez, J., & Mensink, T. (2010). Improving the fisher kernel for large-scale image classification. In European conference on computer vision (pp. 143-156). Springer, Berlin, Heidelberg. https://www.robots.ox.ac.uk/~vgg/rg/papers/peronnin_etal_ECCV10.pdf
+- [2] Fisher Vector Fundamentals - VLFeat Documentation: http://www.vlfeat.org/api/fisher-fundamentals.html
+
+## License
+
+MIT License - see LICENSE file for details
