@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name="DeepFV",  # Will be normalized to 'deepfv' on PyPI
-      version='0.2.3',
+      version='0.2.4',
       description='Fisher Vectors based on Gaussian Mixture Model with TensorFlow deep learning support',
       long_description=open('README.md').read(),
       long_description_content_type='text/markdown',
