@@ -1,6 +1,6 @@
 from setuptools import setup
 
-setup(name="fishervector",
+setup(name="DeepFV",
       version='0.2.0',
       description='Fisher Vectors based on Gaussian Mixture Model with TensorFlow deep learning support',
       long_description=open('README.md').read(),
@@ -10,7 +10,7 @@ setup(name="fishervector",
       author_email='',
       maintainer='John-William Sidhom',
       license='MIT',
-      packages=['fishervector'],
+      packages=['DeepFV'],
       test_suite='nose.collector',
       tests_require=['nose'],
       install_requires=[

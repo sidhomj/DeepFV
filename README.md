@@ -15,14 +15,17 @@ A TensorFlow-based implementation of Improved Fisher Vectors as described in [1]
 
 ## Installation
 
-Install dependencies:
+Install from PyPI:
 ```bash
-pip install -r requirements.txt
+pip install DeepFV
 ```
 
-Or install directly:
+Or install from source:
 ```bash
-pip install numpy scipy scikit-learn tensorflow matplotlib
+git clone https://github.com/sidhomj/DeepFV.git
+cd DeepFV
+pip install -r requirements.txt
+pip install -e .
 ```
 
 ## Quick Start
@@ -41,7 +44,7 @@ image_data = np.concatenate([
 
 ### 2. Train with mini-batch gradient descent
 ```python
-from fishervector import FisherVectorDL
+from DeepFV import FisherVectorDL
 
 # Create model with FULL covariance support
 fv_dl = FisherVectorDL(
@@ -91,7 +94,7 @@ print(f"Fisher vector shape: {fisher_vectors.shape}")
 fv_dl.save_model('my_model.pkl')
 
 # Load model later
-from fishervector import FisherVectorDL
+from fishervectordl import FisherVectorDL
 fv_dl_loaded = FisherVectorDL.load_model('my_model.pkl')
 ```
 
