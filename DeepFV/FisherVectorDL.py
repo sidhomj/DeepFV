@@ -593,6 +593,101 @@ class FisherVectorDL(tf.keras.Model):
 
         return fisher_vectors_all
 
+    def predict_fisher_vector_bags(self, X, bag_ids, normalized=True, batch_size=None, verbose=False):
+        """
+        Compute Fisher Vectors for variable-length bags (e.g., MIL, image with varying SIFT descriptors).
+
+        Args:
+            X: Instance-level features with shape (n_instances, ..., feature_dim)
+               - 2D: (n_instances, feature_dim) - each instance is a single descriptor
+               - 3D: (n_instances, n_descriptors, feature_dim) - each instance has multiple descriptors
+               - Higher dimensions also supported
+            bag_ids: Array of bag IDs (n_instances,)
+                    Maps each instance to its bag. Can be any hashable type (int, str, etc.)
+            normalized: Apply improved Fisher Vector normalization
+            batch_size: Process bags in batches (default: None = process all at once)
+            verbose: Print progress
+
+        Returns:
+            fisher_vectors: Array of Fisher Vectors, shape depends on X dimensionality
+            unique_bag_ids: Array of unique bag IDs corresponding to fisher_vectors rows
+                           Sorted in the order they appear in bag_ids
+
+        Examples:
+            >>> # Example 1: 2D - Simple SIFT descriptors
+            >>> X = np.random.randn(245, 128)  # 245 descriptors, 128-dim
+            >>> bag_ids = np.array([0]*50 + [1]*120 + [2]*75)
+            >>> fisher_vectors, unique_ids = fv_dl.predict_fisher_vector_bags(X, bag_ids)
+            >>> fisher_vectors.shape  # (3, 20, 128) if n_kernels=10
+
+            >>> # Example 2: 3D - Each instance has multiple descriptors
+            >>> X = np.random.randn(100, 10, 128)  # 100 instances, 10 descriptors each
+            >>> bag_ids = np.array([0]*30 + [1]*40 + [2]*30)
+            >>> fisher_vectors, unique_ids = fv_dl.predict_fisher_vector_bags(X, bag_ids)
+            >>> fisher_vectors.shape  # (3, 20, 128) if n_kernels=10
+        """
+        assert self.fitted, "Model must be fitted first"
+        assert X.ndim >= 2, "X must be at least 2D with shape (n_instances, ..., feature_dim)"
+        assert len(bag_ids) == len(X), "bag_ids must have same length as first dimension of X"
+
+        # Convert bag_ids to numpy array if not already
+        bag_ids = np.asarray(bag_ids)
+
+        # Get unique bag IDs in order of first appearance
+        _, unique_indices = np.unique(bag_ids, return_index=True)
+        unique_bag_ids = bag_ids[np.sort(unique_indices)]
+        n_bags = len(unique_bag_ids)
+
+        if verbose:
+            print(f"Processing {len(X)} instances from {n_bags} bags...")
+
+        # Pre-allocate output
+        fisher_vectors = np.zeros((n_bags, 2 * self.n_kernels, self.feature_dim), dtype=np.float32)
+
+        # Process bags in batches if specified
+        if batch_size is not None:
+            n_batches = int(np.ceil(n_bags / batch_size))
+
+            for batch_idx in range(n_batches):
+                start_bag = batch_idx * batch_size
+                end_bag = min((batch_idx + 1) * batch_size, n_bags)
+
+                batch_bag_ids = unique_bag_ids[start_bag:end_bag]
+
+                for i, bag_id in enumerate(batch_bag_ids):
+                    # Get instances for this bag
+                    mask = bag_ids == bag_id
+                    X_bag = X[mask]  # (n_instances_in_bag, feature_dim)
+
+                    # Compute Fisher Vector for this bag
+                    # Reshape to (1, n_instances_in_bag, feature_dim) for 3D processing
+                    X_bag_3d = X_bag[None, :, :]
+                    fv = self.predict_fisher_vector(X_bag_3d, normalized=normalized, batch_size=None)
+                    fisher_vectors[start_bag + i] = fv[0]
+
+                if verbose and (batch_idx + 1) % max(1, n_batches // 10) == 0:
+                    print(f"  Processed {end_bag}/{n_bags} bags ({(end_bag/n_bags)*100:.1f}%)")
+        else:
+            # Process all bags
+            for i, bag_id in enumerate(unique_bag_ids):
+                # Get instances for this bag
+                mask = bag_ids == bag_id
+                X_bag = X[mask]  # (n_instances_in_bag, feature_dim)
+
+                # Compute Fisher Vector for this bag
+                # Reshape to (1, n_instances_in_bag, feature_dim) for 3D processing
+                X_bag_3d = X_bag[None, :, :]
+                fv = self.predict_fisher_vector(X_bag_3d, normalized=normalized, batch_size=None)
+                fisher_vectors[i] = fv[0]
+
+                if verbose and (i + 1) % max(1, n_bags // 10) == 0:
+                    print(f"  Processed {i+1}/{n_bags} bags ({((i+1)/n_bags)*100:.1f}%)")
+
+        if verbose:
+            print(f"✓ Completed processing {n_bags} bags")
+
+        return fisher_vectors, unique_bag_ids
+
     def _predict(self, X, normalized=True):
         """
         Internal method to compute Fisher Vectors.
