@@ -261,7 +261,8 @@ class FisherVectorDL(tf.keras.Model):
         return -tf.reduce_mean(log_likelihood)
 
     def fit_minibatch(self, X, epochs=100, batch_size=1024*6, learning_rate=0.001,
-                      verbose=True, model_dump_path=None, steps_per_epoch=None, print_every=1):
+                      verbose=True, model_dump_path=None, steps_per_epoch=None, print_every=1,
+                      validation_split=0.0, patience=None, min_delta=0.001):
         """
         Fit GMM using mini-batch gradient descent.
 
@@ -274,7 +275,13 @@ class FisherVectorDL(tf.keras.Model):
             model_dump_path: Path to save fitted model
             steps_per_epoch: Number of batches to process per epoch (default: None = full dataset).
                            Useful for massive datasets to avoid cycling through entire dataset per epoch.
-            print_every: Print loss every N epochs (default: 10). Always prints first and last epoch.
+            print_every: Print loss every N epochs (default: 1). Always prints first and last epoch.
+            validation_split: Fraction of data to use for validation (default: 0.0 = no validation).
+                            E.g., 0.2 means 20% validation, 80% training.
+            patience: Number of epochs to wait for improvement before early stopping (default: None = no early stopping).
+                     If validation_split > 0: monitors validation loss.
+                     If validation_split = 0: monitors training loss.
+            min_delta: Minimum change in loss to qualify as improvement (default: 0.001).
 
         Returns:
             self
@@ -295,47 +302,114 @@ class FisherVectorDL(tf.keras.Model):
 
         self.feature_dim = X.shape[-1]
 
-        # Initialize if not already done
+        # Split data into train/val if validation_split is specified
+        if validation_split > 0:
+            n_samples = len(X)
+            n_val = int(n_samples * validation_split)
+            n_train = n_samples - n_val
+
+            # Shuffle indices
+            indices = np.random.permutation(n_samples)
+            train_indices = indices[:n_train]
+            val_indices = indices[n_train:]
+
+            X_train = X[train_indices]
+            X_val = X[val_indices]
+
+            if verbose:
+                print(f'Split data: {n_train} training, {n_val} validation samples')
+        else:
+            X_train = X
+            X_val = None
+
+        # Initialize if not already done (use all training data for initialization)
         if not self.fitted:
             if verbose:
                 print(f'Initializing GMM with MiniBatchKMeans ({self.n_kernels} kernels)...')
-            self.initialize(X, init='MiniBatchKmeans')
+            self.initialize(X_train, init='MiniBatchKmeans')
 
-        # Create TensorFlow dataset
-        dataset = tf.data.Dataset.from_tensor_slices(X.astype(np.float32))
-        dataset = dataset.shuffle(buffer_size=min(10000, len(X)))
-        dataset = dataset.batch(batch_size)
-        dataset = dataset.prefetch(tf.data.AUTOTUNE)
+        # Create TensorFlow datasets
+        train_dataset = tf.data.Dataset.from_tensor_slices(X_train.astype(np.float32))
+        train_dataset = train_dataset.shuffle(buffer_size=min(10000, len(X_train)))
+        train_dataset = train_dataset.batch(batch_size)
+        train_dataset = train_dataset.prefetch(tf.data.AUTOTUNE)
+
+        if X_val is not None:
+            val_dataset = tf.data.Dataset.from_tensor_slices(X_val.astype(np.float32))
+            val_dataset = val_dataset.batch(batch_size)
+            val_dataset = val_dataset.prefetch(tf.data.AUTOTUNE)
 
         # Optimizer
         optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
 
+        # Early stopping tracking
+        best_loss = float('inf')
+        epochs_no_improve = 0
+
         # Training loop
         if verbose:
             steps_info = f' ({steps_per_epoch} steps/epoch)' if steps_per_epoch else ''
-            print(f'Training GMM with {self.n_kernels} kernels for {epochs} epochs{steps_info}...')
+            val_info = f' with validation' if validation_split > 0 else ''
+            early_stop_info = f' (early stopping enabled)' if patience is not None else ''
+            print(f'Training GMM with {self.n_kernels} kernels for {epochs} epochs{steps_info}{val_info}{early_stop_info}...')
 
         for epoch in range(epochs):
-            epoch_loss = []
+            # Training phase
+            epoch_train_loss = []
             step_count = 0
 
-            for batch in dataset:
+            for batch in train_dataset:
                 with tf.GradientTape() as tape:
                     loss = self(batch, training=True)
 
                 gradients = tape.gradient(loss, self.trainable_variables)
                 optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
-                epoch_loss.append(loss.numpy())
+                epoch_train_loss.append(loss.numpy())
                 step_count += 1
 
                 # Stop after steps_per_epoch batches if specified
                 if steps_per_epoch is not None and step_count >= steps_per_epoch:
                     break
 
-            if verbose and (epoch % print_every == 0 or epoch == epochs - 1):
-                avg_loss = np.mean(epoch_loss)
-                print(f'Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}')
+            avg_train_loss = np.mean(epoch_train_loss)
+
+            # Validation phase
+            if X_val is not None:
+                epoch_val_loss = []
+                for batch in val_dataset:
+                    val_loss = self(batch, training=False)
+                    epoch_val_loss.append(val_loss.numpy())
+                avg_val_loss = np.mean(epoch_val_loss)
+
+                # Monitor validation loss for early stopping
+                monitored_loss = avg_val_loss
+
+                # Print progress
+                if verbose and (epoch % print_every == 0 or epoch == epochs - 1):
+                    print(f'Epoch {epoch+1}/{epochs}, Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}')
+            else:
+                # No validation - monitor training loss for early stopping
+                monitored_loss = avg_train_loss
+
+                # Print progress
+                if verbose and (epoch % print_every == 0 or epoch == epochs - 1):
+                    print(f'Epoch {epoch+1}/{epochs}, Train Loss: {avg_train_loss:.4f}')
+
+            # Early stopping check (works for both validation and training loss)
+            if patience is not None:
+                if monitored_loss < best_loss - min_delta:
+                    best_loss = monitored_loss
+                    epochs_no_improve = 0
+                else:
+                    epochs_no_improve += 1
+
+                # Trigger early stopping
+                if epochs_no_improve >= patience:
+                    if verbose:
+                        loss_type = 'Val Loss' if X_val is not None else 'Train Loss'
+                        print(f'Early stopping triggered after {epoch+1} epochs (patience={patience}, {loss_type} plateaued)')
+                    break
 
         self.fitted = True
 
