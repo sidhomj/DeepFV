@@ -1,4 +1,3 @@
-[![Build Status](https://travis-ci.org/jonasrothfuss/fishervector.svg?branch=master)](https://travis-ci.org/jonasrothfuss/fishervector)
 
 # DeepFV - Fisher Vectors with Deep Learning
 
