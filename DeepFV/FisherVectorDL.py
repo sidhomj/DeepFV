@@ -261,7 +261,7 @@ class FisherVectorDL(tf.keras.Model):
         return -tf.reduce_mean(log_likelihood)
 
     def fit_minibatch(self, X, epochs=100, batch_size=1024*6, learning_rate=0.001,
-                      verbose=True, model_dump_path=None):
+                      verbose=True, model_dump_path=None, steps_per_epoch=None):
         """
         Fit GMM using mini-batch gradient descent.
 
@@ -272,6 +272,8 @@ class FisherVectorDL(tf.keras.Model):
             learning_rate: Learning rate for optimizer
             verbose: Print training progress
             model_dump_path: Path to save fitted model
+            steps_per_epoch: Number of batches to process per epoch (default: None = full dataset).
+                           Useful for massive datasets to avoid cycling through entire dataset per epoch.
 
         Returns:
             self
@@ -309,10 +311,12 @@ class FisherVectorDL(tf.keras.Model):
 
         # Training loop
         if verbose:
-            print(f'Training GMM with {self.n_kernels} kernels for {epochs} epochs...')
+            steps_info = f' ({steps_per_epoch} steps/epoch)' if steps_per_epoch else ''
+            print(f'Training GMM with {self.n_kernels} kernels for {epochs} epochs{steps_info}...')
 
         for epoch in range(epochs):
             epoch_loss = []
+            step_count = 0
 
             for batch in dataset:
                 with tf.GradientTape() as tape:
@@ -322,6 +326,11 @@ class FisherVectorDL(tf.keras.Model):
                 optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
                 epoch_loss.append(loss.numpy())
+                step_count += 1
+
+                # Stop after steps_per_epoch batches if specified
+                if steps_per_epoch is not None and step_count >= steps_per_epoch:
+                    break
 
             if verbose and (epoch % 10 == 0 or epoch == epochs - 1):
                 avg_loss = np.mean(epoch_loss)
