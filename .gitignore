@@ -124,3 +124,8 @@ saved_model/
 
 # Model files
 *.model
+
+# Build artifacts
+build/
+*.egg-info/
+.eggs/
