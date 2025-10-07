@@ -667,7 +667,8 @@ class FisherVectorDL(tf.keras.Model):
 
         return fisher_vectors_all
 
-    def predict_fisher_vector_bags(self, X, bag_ids, normalized=True, return_instance_level=False, verbose=False):
+    def predict_fisher_vector_bags(self, X, bag_ids, normalized=True, return_instance_level=False,
+                                   instance_batch_size=None, verbose=False):
         """
         Compute Fisher Vectors for variable-length bags (OPTIMIZED with vectorization).
 
@@ -681,6 +682,8 @@ class FisherVectorDL(tf.keras.Model):
                     Maps each instance to its bag. Can be any hashable type (int, str, etc.)
             normalized: Apply improved Fisher Vector normalization
             return_instance_level: If True, also return instance-level Fisher statistics (default: False)
+            instance_batch_size: Process instances in batches to avoid OOM (default: None = all at once).
+                                For millions of instances, set to e.g., 100000-500000.
             verbose: Print progress
 
         Returns:
@@ -695,9 +698,10 @@ class FisherVectorDL(tf.keras.Model):
             >>> fisher_vectors, unique_ids = fv_dl.predict_fisher_vector_bags(X, bag_ids)
             >>> fisher_vectors.shape  # (3, 20, 128) if n_kernels=10
 
-            >>> # Get instance-level Fisher Vectors too
-            >>> fvs, ids, inst_fvs = fv_dl.predict_fisher_vector_bags(X, bag_ids, return_instance_level=True)
-            >>> inst_fvs.shape  # (245, 20, 128) - one FV per instance
+            >>> # For millions of instances - use batching
+            >>> fisher_vectors, unique_ids = fv_dl.predict_fisher_vector_bags(
+            ...     X_millions, bag_ids_millions, instance_batch_size=100000, verbose=True
+            ... )
         """
         assert self.fitted, "Model must be fitted first"
         assert X.ndim == 2, "X must be 2D: (n_instances, feature_dim)"
@@ -712,38 +716,90 @@ class FisherVectorDL(tf.keras.Model):
         unique_bag_ids = bag_ids[np.sort(unique_indices)]
         n_bags = len(unique_bag_ids)
 
-        if verbose:
-            print(f"Computing instance-level Fisher statistics for {n_instances} instances...")
-
-        # STEP 1: Compute instance-level Fisher statistics for ALL instances at once (vectorized!)
-        mean_dev, cov_dev = self._compute_instance_fisher_statistics(X)
-        # Shape: (n_instances, n_kernels, feature_dim) each
-
-        if verbose:
-            print(f"Aggregating by {n_bags} bags...")
-
-        # STEP 2: Aggregate by bag using efficient groupby
-        # Pre-allocate output
+        # Pre-allocate output for bag aggregation
         bag_mean_dev = np.zeros((n_bags, self.n_kernels, self.feature_dim), dtype=np.float32)
         bag_cov_dev = np.zeros((n_bags, self.n_kernels, self.feature_dim), dtype=np.float32)
+        bag_counts = np.zeros(n_bags, dtype=np.int32)  # Track number of instances per bag
 
         # Create a mapping from bag_id to bag_index
         bag_id_to_idx = {bag_id: idx for idx, bag_id in enumerate(unique_bag_ids)}
 
-        # Aggregate using vectorized operations
-        for i, bag_id in enumerate(unique_bag_ids):
-            mask = bag_ids == bag_id
-            # Take mean over instances in this bag
-            bag_mean_dev[i] = mean_dev[mask].mean(axis=0)
-            bag_cov_dev[i] = cov_dev[mask].mean(axis=0)
+        # Prepare for instance-level storage if needed
+        if return_instance_level:
+            instance_mean_dev_list = []
+            instance_cov_dev_list = []
 
-            if verbose and (i + 1) % max(1, n_bags // 10) == 0:
-                print(f"  Aggregated {i+1}/{n_bags} bags ({((i+1)/n_bags)*100:.1f}%)")
+        # STEP 1: Compute instance-level Fisher statistics (in batches if needed)
+        if instance_batch_size is None or n_instances <= instance_batch_size:
+            # Process all at once
+            if verbose:
+                print(f"Computing instance-level Fisher statistics for {n_instances} instances...")
 
-        # STEP 3: Concatenate mean and covariance deviations
+            mean_dev, cov_dev = self._compute_instance_fisher_statistics(X)
+
+            if verbose:
+                print(f"Aggregating by {n_bags} bags...")
+
+            # Aggregate by bag
+            for i, bag_id in enumerate(unique_bag_ids):
+                mask = bag_ids == bag_id
+                bag_mean_dev[i] = mean_dev[mask].mean(axis=0)
+                bag_cov_dev[i] = cov_dev[mask].mean(axis=0)
+
+                if verbose and (i + 1) % max(1, n_bags // 10) == 0:
+                    print(f"  Aggregated {i+1}/{n_bags} bags ({((i+1)/n_bags)*100:.1f}%)")
+
+            if return_instance_level:
+                instance_mean_dev_list = [mean_dev]
+                instance_cov_dev_list = [cov_dev]
+
+        else:
+            # Process in batches to avoid OOM
+            n_batches = int(np.ceil(n_instances / instance_batch_size))
+
+            if verbose:
+                print(f"Processing {n_instances} instances in {n_batches} batches of {instance_batch_size}...")
+
+            for batch_idx in range(n_batches):
+                start_idx = batch_idx * instance_batch_size
+                end_idx = min((batch_idx + 1) * instance_batch_size, n_instances)
+
+                # Get batch
+                X_batch = X[start_idx:end_idx]
+                bag_ids_batch = bag_ids[start_idx:end_idx]
+
+                # Compute Fisher statistics for this batch
+                mean_dev_batch, cov_dev_batch = self._compute_instance_fisher_statistics(X_batch)
+
+                # Accumulate into bag aggregates
+                for i, bag_id in enumerate(unique_bag_ids):
+                    mask = bag_ids_batch == bag_id
+                    if mask.any():
+                        # Accumulate sum and count for later averaging
+                        bag_mean_dev[i] += mean_dev_batch[mask].sum(axis=0)
+                        bag_cov_dev[i] += cov_dev_batch[mask].sum(axis=0)
+                        bag_counts[i] += mask.sum()
+
+                if return_instance_level:
+                    instance_mean_dev_list.append(mean_dev_batch)
+                    instance_cov_dev_list.append(cov_dev_batch)
+
+                if verbose:
+                    print(f"  Processed batch {batch_idx+1}/{n_batches} ({end_idx}/{n_instances} instances)")
+
+            # Convert sums to means
+            for i in range(n_bags):
+                if bag_counts[i] > 0:
+                    bag_mean_dev[i] /= bag_counts[i]
+                    bag_cov_dev[i] /= bag_counts[i]
+
+            if verbose:
+                print(f"✓ Completed aggregation for {n_bags} bags")
+
+        # STEP 2: Concatenate mean and covariance deviations
         fisher_vectors = np.concatenate([bag_mean_dev, bag_cov_dev], axis=1)  # (n_bags, 2*n_kernels, feature_dim)
 
-        # STEP 4: Apply normalization if requested
+        # STEP 3: Apply normalization if requested
         if normalized:
             # Power normalization
             fisher_vectors = np.sqrt(np.abs(fisher_vectors)) * np.sign(fisher_vectors)
@@ -757,13 +813,20 @@ class FisherVectorDL(tf.keras.Model):
             print(f"✓ Completed processing {n_bags} bags from {n_instances} instances")
 
         if return_instance_level:
-            # Return instance-level Fisher Vectors too
-            instance_fisher_vectors = np.concatenate([mean_dev, cov_dev], axis=1)
+            # Concatenate all instance-level results
+            if verbose:
+                print(f"Assembling instance-level Fisher Vectors...")
+
+            instance_mean_dev = np.concatenate(instance_mean_dev_list, axis=0)
+            instance_cov_dev = np.concatenate(instance_cov_dev_list, axis=0)
+            instance_fisher_vectors = np.concatenate([instance_mean_dev, instance_cov_dev], axis=1)
+
             if normalized:
                 instance_fisher_vectors = np.sqrt(np.abs(instance_fisher_vectors)) * np.sign(instance_fisher_vectors)
                 norms = np.linalg.norm(instance_fisher_vectors, axis=(1, 2))[:, None, None]
                 instance_fisher_vectors = instance_fisher_vectors / (norms + 1e-10)
                 instance_fisher_vectors[instance_fisher_vectors < 1e-4] = 0
+
             return fisher_vectors, unique_bag_ids, instance_fisher_vectors
         else:
             return fisher_vectors, unique_bag_ids
