@@ -483,14 +483,16 @@ class FisherVectorDL(tf.keras.Model):
         Compute Fisher Vectors for input data.
 
         Args:
-            X: Input features with 3 or 4 dimensions
+            X: Input features with 2, 3, or 4 dimensions
+               - 2D: (n_samples, feature_dim) - each sample treated as single descriptor
                - 3D: (n_samples, n_descriptors, feature_dim)
                - 4D: (n_samples, n_features_per_sample, n_descriptors, feature_dim)
             normalized: Apply improved Fisher Vector normalization
 
         Returns:
-            Fisher vectors with shape (n_samples, 2*n_kernels, feature_dim) for 3D input
-            or (n_samples, n_features_per_sample, 2*n_kernels, feature_dim) for 4D input
+            Fisher vectors with shape:
+            - (n_samples, 2*n_kernels, feature_dim) for 2D or 3D input
+            - (n_samples, n_features_per_sample, 2*n_kernels, feature_dim) for 4D input
         """
         if X.ndim == 4:
             return self._predict(X, normalized=normalized)
@@ -499,8 +501,15 @@ class FisherVectorDL(tf.keras.Model):
             X = np.reshape(X, [1] + list(X.shape))
             result = self._predict(X, normalized=normalized)
             return np.reshape(result, (orig_shape[0], 2 * self.n_kernels, orig_shape[-1]))
+        elif X.ndim == 2:
+            # Treat each sample as having a single descriptor
+            orig_shape = X.shape
+            X = X.reshape(orig_shape[0], 1, orig_shape[1])  # (n_samples, 1, feature_dim)
+            X = np.reshape(X, [1] + list(X.shape))  # (1, n_samples, 1, feature_dim)
+            result = self._predict(X, normalized=normalized)
+            return np.reshape(result, (orig_shape[0], 2 * self.n_kernels, orig_shape[-1]))
         else:
-            raise AssertionError("X must be an ndarray with 3 or 4 dimensions")
+            raise AssertionError("X must be an ndarray with 2, 3, or 4 dimensions")
 
     def _predict(self, X, normalized=True):
         """
