@@ -103,3 +103,24 @@ ENV/
 .xml
 .iml
 .idea/
+
+# Test outputs
+*.png
+*.pkl
+test_fv_*.pickle
+
+# TensorFlow
+*.pb
+checkpoint
+saved_model/
+*.h5
+*.ckpt*
+
+# PyCharm
+.idea/
+
+# macOS
+.DS_Store
+
+# Model files
+*.model
