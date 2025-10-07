@@ -105,7 +105,6 @@ ENV/
 .idea/
 
 # Test outputs
-*.png
 *.pkl
 test_fv_*.pickle
 

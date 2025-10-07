@@ -123,6 +123,20 @@ This will:
 - Compute and visualize Fisher Vectors
 - Save visualizations as PNG files
 
+### Example Results
+
+**GMM Clustering with BIC Selection:**
+
+![Fisher Vector DL Test](fishervector_dl_test.png)
+
+The plot shows how full covariance GMMs can model rotated elliptical clusters. The BIC criterion automatically selects the optimal number of components.
+
+**Fisher Vector Visualization:**
+
+![Fisher Vector Visualization](fishervector_visualization.png)
+
+Left: Original 2D data colored by true cluster labels. Right: Fisher Vectors projected back to 2D using PCA, showing how the representation captures cluster structure.
+
 ## Contributors
 
 * **John-William Sidhom** (https://github.com/sidhomj/) - Main contributor, TensorFlow implementation with full covariance support
