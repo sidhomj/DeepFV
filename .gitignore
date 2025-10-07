@@ -129,3 +129,6 @@ saved_model/
 build/
 *.egg-info/
 .eggs/
+
+# PyPI credentials (NEVER commit this!)
+.pypirc
