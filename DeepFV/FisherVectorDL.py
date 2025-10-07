@@ -261,7 +261,7 @@ class FisherVectorDL(tf.keras.Model):
         return -tf.reduce_mean(log_likelihood)
 
     def fit_minibatch(self, X, epochs=100, batch_size=1024*6, learning_rate=0.001,
-                      verbose=True, model_dump_path=None, steps_per_epoch=None, print_every=10):
+                      verbose=True, model_dump_path=None, steps_per_epoch=None, print_every=1):
         """
         Fit GMM using mini-batch gradient descent.
 
