@@ -166,8 +166,7 @@ labels_sampled = labels[sample_indices]
 print(f"Sampled {len(sample_indices)} points ({n_samples_per_cluster} per cluster)")
 print(f"  Cluster distribution: {[np.sum(labels_sampled == i) for i in range(n_mixtures)]}")
 
-# Compute Fisher Vectors directly from 2D data
-# The method now handles 2D input automatically (treats each sample as having a single descriptor)
+# Compute Fisher Vectors
 print(f"\nComputing Fisher Vectors for {X_sampled.shape[0]} samples...")
 fisher_vectors = fv_dl.predict_fisher_vector(X_sampled, normalized=True)
 print(f"✓ Fisher vector shape: {fisher_vectors.shape}")
