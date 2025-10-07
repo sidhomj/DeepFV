@@ -94,7 +94,7 @@ print(f"Fisher vector shape: {fisher_vectors.shape}")
 fv_dl.save_model('my_model.pkl')
 
 # Load model later
-from fishervectordl import FisherVectorDL
+from DeepFV import FisherVectorDL
 fv_dl_loaded = FisherVectorDL.load_model('my_model.pkl')
 ```
 
