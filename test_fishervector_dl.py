@@ -151,9 +151,24 @@ print("\n" + "=" * 60)
 print("[Test 3] Computing and visualizing Fisher Vectors")
 print("=" * 60)
 
+# Sample evenly from each cluster to ensure all clusters are represented
+n_samples_per_cluster = 50
+sample_indices = []
+for i in range(n_mixtures):
+    cluster_indices = np.where(labels == i)[0]
+    sampled = np.random.choice(cluster_indices, size=min(n_samples_per_cluster, len(cluster_indices)), replace=False)
+    sample_indices.extend(sampled)
+
+sample_indices = np.array(sample_indices)
+X_sampled = X[sample_indices]
+labels_sampled = labels[sample_indices]
+
+print(f"Sampled {len(sample_indices)} points ({n_samples_per_cluster} per cluster)")
+print(f"  Cluster distribution: {[np.sum(labels_sampled == i) for i in range(n_mixtures)]}")
+
 # Reshape data to 3D for Fisher Vector computation (n_images, n_features_per_image, feature_dim)
 # Let's treat each sample as an "image" with 1 "feature"
-X_for_fv = X[:100].reshape(100, 1, feature_dim)  # Take 100 samples
+X_for_fv = X_sampled.reshape(len(sample_indices), 1, feature_dim)
 
 # Compute Fisher Vectors
 print(f"\nComputing Fisher Vectors for {X_for_fv.shape[0]} samples...")
@@ -165,7 +180,7 @@ print(f"  Expected: ({X_for_fv.shape[0]}, {2 * n_mixtures}, {feature_dim})")
 fv_flattened = fisher_vectors.reshape(fisher_vectors.shape[0], -1)  # (n_samples, 2*n_kernels*feature_dim)
 print(f"✓ Flattened Fisher vector shape: {fv_flattened.shape}")
 
-# Visualize Fisher Vectors using t-SNE or PCA
+# Visualize Fisher Vectors using PCA
 from sklearn.decomposition import PCA
 
 print("\nReducing Fisher Vector dimensionality with PCA for visualization...")
@@ -179,7 +194,7 @@ plt.figure(figsize=(10, 5))
 plt.subplot(1, 2, 1)
 # Color by true labels
 for i in range(n_mixtures):
-    mask = labels[:100] == i
+    mask = labels_sampled == i
     plt.scatter(fv_2d[mask, 0], fv_2d[mask, 1], c=colors[i], alpha=0.6, s=30, label=f'Cluster {i+1}')
 plt.title('Fisher Vectors (colored by true cluster)')
 plt.xlabel('PCA Component 1')
@@ -189,7 +204,7 @@ plt.grid(True, alpha=0.3)
 
 plt.subplot(1, 2, 2)
 # Color by original features
-plt.scatter(fv_2d[:, 0], fv_2d[:, 1], c=X[:100, 0], cmap='viridis', alpha=0.6, s=30)
+plt.scatter(fv_2d[:, 0], fv_2d[:, 1], c=X_sampled[:, 0], cmap='viridis', alpha=0.6, s=30)
 plt.colorbar(label='Original Feature 1 Value')
 plt.title('Fisher Vectors (colored by feature value)')
 plt.xlabel('PCA Component 1')
